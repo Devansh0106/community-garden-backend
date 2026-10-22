@@ -1,1 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Community Garden Allotment</title>
+<style>
+:root{--bg:#eef1e6;--surface:#fbfcf7;--ink:#2a2620;--muted:#6b6a5c;--line:#d5d9c6;--leaf:#3f6b34;--leaf-soft:#d7e6bf;--gold:#c98a0b;--gold-soft:#f6e3b0;--clay:#a2492f;--clay-soft:#efd0c4;--path:#e3e7d3}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1e16;--surface:#252920;--ink:#ecebdd;--muted:#a3a692;--line:#3a4030;--leaf:#8cc271;--leaf-soft:#33482a;--gold:#e6b04a;--gold-soft:#4a3b17;--clay:#e58a6e;--clay-soft:#4b2a20;--path:#20241a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+h1,h2,h3{margin:0;line-height:1.15}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.wrap{max-width:1100px;margin:0 auto;padding:20px 18px 48px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.brand{font-weight:800;font-size:1.15rem}
+nav{display:flex;gap:6px}
+nav button,.chips button{border:1px solid var(--line);background:var(--surface);padding:7px 14px;border-radius:999px;cursor:pointer}
+nav button[aria-pressed="true"]{background:var(--leaf);color:var(--surface);border-color:var(--leaf)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+.chips button[aria-pressed="true"]{border-color:var(--ink);font-weight:600}
+h1{font-size:clamp(2rem,6vw,3.4rem);font-weight:800;max-width:14ch}
+.lead{max-width:52ch;color:var(--muted)}
+.count{display:flex;gap:22px;flex-wrap:wrap;margin:18px 0 4px}
+.count b{font-size:1.6rem;margin-right:6px}
+.layout{display:grid;gap:18px;grid-template-columns:minmax(0,1fr)}
+@media(min-width:860px){.layout{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)}}
+.map{background:var(--path);border:2px dashed var(--line);border-radius:14px;padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:14px;align-content:start}
+.plot{text-align:left;min-height:104px;padding:10px 11px;border-radius:6px;border:2px solid var(--leaf);background:var(--leaf-soft);cursor:pointer;display:flex;flex-direction:column;justify-content:space-between}
+.plot.Occupied{background:var(--gold-soft);border-color:var(--gold)}
+.plot.Maintenance{background:var(--clay-soft);border-color:var(--clay);border-style:dashed}
+.plot[aria-pressed="true"]{box-shadow:0 0 0 3px var(--ink)}
+.plot .n{font-weight:800;font-size:1.2rem}
+.plot small{display:block;color:var(--muted)}
+.panel,.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px}
+.meta{color:var(--muted);font-size:.92rem;margin:4px 0 12px}
+label{display:block;font-size:.88rem;font-weight:600;margin:10px 0 4px}
+input{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.btn{margin-top:14px;border:0;background:var(--leaf);color:var(--surface);font-weight:600;padding:10px 16px;border-radius:8px;cursor:pointer}
+.btn.alt{background:transparent;color:var(--ink);border:1px solid var(--line);margin-left:8px}
+ul{list-style:none;padding:0;margin:10px 0 0}
+li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+li button{border:0;background:none;color:var(--clay);cursor:pointer}
+.msg{margin-top:10px;font-size:.9rem;color:var(--clay);min-height:1.2em}
+.glist{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));margin-top:16px}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<div class="brand">Community Garden Allotment</div>
+<nav aria-label="Views"><button id="tabMap" aria-pressed="true">Plot map</button><button id="tabG" aria-pressed="false">Gardeners</button></nav>
+</header>
+<h1>Find a plot. Start growing.</h1>
+<p class="lead">See which garden beds are free, book one in a minute, and keep a record of what you plant.</p>
+<div class="count" id="count"></div>
+<div id="viewMap">
+<div class="chips" role="group" aria-label="Filter plots">
+<button data-f="all" aria-pressed="true">All plots</button><button data-f="Available" aria-pressed="false">Available</button><button data-f="Occupied" aria-pressed="false">Allotted</button><button data-f="Maintenance" aria-pressed="false">Under maintenance</button>
+</div>
+<div class="layout"><div class="map" id="map"></div><aside class="panel" id="panel" aria-live="polite"></aside></div>
+</div>
+<div id="viewG" class="hidden"><div class="glist" id="glist"></div></div>
+</div>
+<script>
+(function(){
+var plots=[],filter="all",sel=null;
+var $=function(i){return document.getElementById(i);};
+function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;}
+function api(path,opt){
+opt=opt||{};if(opt.body){opt.headers={"Content-Type":"application/json"};opt.body=JSON.stringify(opt.body);}
+return fetch(path,opt).then(function(r){return r.json().catch(function(){return {};}).then(function(d){if(!r.ok)throw new Error(d.error||"Request failed.");return d;});});
+}
+var LABEL={Available:"Available",Occupied:"Allotted",Maintenance:"Under maintenance"};
+function load(){
+return api("/api/plots").then(function(d){plots=d;render();}).catch(function(e){$("panel").textContent="Could not load plots: "+e.message;});
+}
+function render(){counts();map();panel();}
+function counts(){
+var c={Available:0,Occupied:0,Maintenance:0};plots.forEach(function(p){c[p.status]++;});
+var b=$("count");b.textContent="";
+[["Available","free to book"],["Occupied","in use"],["Maintenance","closed for repairs"]].forEach(function(x){var d=el("div");d.appendChild(el("b",null,String(c[x[0]])));d.appendChild(document.createTextNode(x[1]));b.appendChild(d);});
+}
+function map(){
+var m=$("map");m.textContent="";
+plots.forEach(function(p){
+if(filter!=="all"&&p.status!==filter)return;
+var b=el("button","plot "+p.status);b.type="button";b.setAttribute("aria-pressed",sel===p.id?"true":"false");
+b.appendChild(el("span","n","Plot "+p.id));
+var s=el("span");s.appendChild(document.createTextNode(LABEL[p.status]));s.appendChild(el("small",null,p.gardener||"\u00a0"));b.appendChild(s);
+b.addEventListener("click",function(){sel=p.id;map();panel();});m.appendChild(b);
+});
+}
+function panel(){
+var pn=$("panel");pn.textContent="";
+var p=plots.filter(function(x){return x.id===sel;})[0];
+if(!p){pn.appendChild(el("h2",null,"Pick a plot"));pn.appendChild(el("p","meta","Select a bed on the map to see details, book it, or log what you\u2019re growing."));return;}
+pn.appendChild(el("h2",null,p.name));pn.appendChild(el("p","meta",LABEL[p.status]));
+var msg=el("div","msg");
+function act(fn){fn().then(load).catch(function(e){msg.textContent=e.message;});}
+if(p.status==="Available"){
+var l1=el("label",null,"Your name");l1.setAttribute("for","gn");var n=el("input");n.id="gn";n.autocomplete="name";
+var l2=el("label",null,"Email");l2.setAttribute("for","ge");var e=el("input");e.id="ge";e.type="email";e.autocomplete="email";
+var bk=el("button","btn","Book this plot");bk.type="button";
+bk.addEventListener("click",function(){act(function(){return api("/api/bookings",{method:"POST",body:{plot_id:p.id,name:n.value,email:e.value}});});});
+[l1,n,l2,e,bk].forEach(function(x){pn.appendChild(x);});
+}else if(p.status==="Occupied"){
+pn.appendChild(el("p",null,"Gardener: "+p.gardener));pn.appendChild(el("h3",null,"Crops"));
+var ul=el("ul");
+if(!p.crops.length)ul.appendChild(el("li",null,"Nothing planted yet. Add the first crop below."));
+p.crops.forEach(function(c){var li=el("li");li.appendChild(el("span",null,c.emoji+" "+c.name+" (planted "+c.plant_date+")"));
+var x=el("button",null,"Remove");x.type="button";x.addEventListener("click",function(){act(function(){return api("/api/crops/"+c.id,{method:"DELETE"});});});li.appendChild(x);ul.appendChild(li);});
+pn.appendChild(ul);
+var l3=el("label",null,"Crop name");l3.setAttribute("for","cn");var cn=el("input");cn.id="cn";
+var l4=el("label",null,"Planted on");l4.setAttribute("for","cd");var cd=el("input");cd.id="cd";cd.type="date";cd.value=new Date().toISOString().slice(0,10);
+var add=el("button","btn","Add crop");add.type="button";
+add.addEventListener("click",function(){act(function(){return api("/api/plots/"+p.id+"/crops",{method:"POST",body:{name:cn.value,plant_date:cd.value}});});});
+var rel=el("button","btn alt","Release plot");rel.type="button";
+rel.addEventListener("click",function(){act(function(){return api("/api/plots/"+p.id+"/release",{method:"POST"});});});
+[l3,cn,l4,cd,add,rel].forEach(function(x){pn.appendChild(x);});
+}else{pn.appendChild(el("p",null,"This bed is closed for repairs and can\u2019t be booked right now."));}
+pn.appendChild(msg);
+}
+function gardeners(){
+var g=$("glist");g.textContent="";
+api("/api/gardeners").then(function(d){
+if(!d.length){g.appendChild(el("p","meta","No gardeners yet. Book a plot to be the first."));return;}
+d.forEach(function(x){var c=el("div","card");c.appendChild(el("h3",null,x.name));c.appendChild(el("p","meta","Joined "+x.joined));c.appendChild(el("p",null,x.plots?"Plots: "+x.plots:"No plot yet"));g.appendChild(c);});
+}).catch(function(e){g.textContent="Could not load gardeners: "+e.message;});
+}
+document.querySelectorAll(".chips button").forEach(function(b){b.addEventListener("click",function(){filter=b.dataset.f;document.querySelectorAll(".chips button").forEach(function(x){x.setAttribute("aria-pressed",x===b?"true":"false");});map();});});
+function tab(m){$("viewMap").classList.toggle("hidden",!m);$("viewG").classList.toggle("hidden",m);$("tabMap").setAttribute("aria-pressed",m);$("tabG").setAttribute("aria-pressed",!m);if(!m)gardeners();else load();}
+$("tabMap").addEventListener("click",function(){tab(true);});$("tabG").addEventListener("click",function(){tab(false);});
+load();
+})();
+</script>
+</body>
+</html>
 
