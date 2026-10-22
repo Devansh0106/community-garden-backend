@@ -1,0 +1,15 @@
+[Unit]
+Description=Community Garden Flask API
+After=network.target
+
+[Service]
+User=ec2-user
+WorkingDirectory=/home/ec2-user/community-garden-backend
+Environment="DB_SECRET_NAME=garden/db"
+Environment="AWS_REGION=us-east-1"
+Environment="DB_NAME=gardendb"
+ExecStart=/home/ec2-user/community-garden-backend/.venv/bin/gunicorn --workers 2 --bind 0.0.0.0:8000 app:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
